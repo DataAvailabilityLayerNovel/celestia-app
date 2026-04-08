@@ -651,6 +651,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
+github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d v0.0.0-20260402020925-1a441ce0c2c1 h1:v1u1++9m7cVoOmO5G33Pvvv65Db9LzPYMq2Fce6TEIA=
+github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d v0.0.0-20260402020925-1a441ce0c2c1/go.mod h1:chcCKVcOeQybCnZxxdgl0vbIJ6yy9jmpnhSuweCELSU=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/datadog-go v4.8.3+incompatible h1:fNGaYSuObuQb5nzeTQqowRAd9bpDIRRV4/gUtIBjh8Q=
 github.com/DataDog/datadog-go v4.8.3+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
@@ -804,8 +806,8 @@ github.com/celestiaorg/nmt v0.24.2 h1:LlpJSPOd6/Lw1Ig6HUhZuqiINHLka/ZSRTBzlNJpch
 github.com/celestiaorg/nmt v0.24.2/go.mod h1:vgLBpWBi8F5KLxTdXSwb7AU4NhiIQ1AQRGa+PzdcLEA=
 github.com/celestiaorg/rsmt2d v0.15.1 h1:NF4D0LX501oDjw00RoJrTUrMHrO+Kv0LewL0FKQU7hg=
 github.com/celestiaorg/rsmt2d v0.15.1/go.mod h1:WKkpXoD1foHn4qgFx6GNoz36Wm0fbCh29ze4rA7ZwCs=
-github.com/celestiaorg/tastora v0.15.0 h1:rpXX/y19BzZ6Qf3pCc2YxJid2uwIJbTFf+BgBruOD34=
-github.com/celestiaorg/tastora v0.15.0/go.mod h1:C867PBm6Ne6e/1JlmsRqcLeJ6RHAuMoMRCvwJzV/q8g=
+github.com/celestiaorg/tastora v0.17.0 h1:pqhAkR9lmaAG5OXI0cs2Al2LraAtXyT3Ku34tqamEvE=
+github.com/celestiaorg/tastora v0.17.0/go.mod h1:C867PBm6Ne6e/1JlmsRqcLeJ6RHAuMoMRCvwJzV/q8g=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/cenkalti/backoff/v4 v4.1.1/go.mod h1:scbssz8iZGpm3xbr14ovlUdkxfGXNInqkPWOWmG2CLw=
