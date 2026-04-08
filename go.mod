@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute v1.57.0
 	cosmossdk.io/api v1.0.0
 	cosmossdk.io/client/v2 v2.0.0-beta.8
-	cosmossdk.io/collections v0.4.0
+	cosmossdk.io/collections v1.2.0
 	cosmossdk.io/core v1.1.0
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/log v1.6.0
@@ -14,9 +14,9 @@ require (
 	cosmossdk.io/store v1.1.2
 	cosmossdk.io/tools/confix v0.1.2
 	cosmossdk.io/x/circuit v0.1.1
-	cosmossdk.io/x/evidence v0.1.1
+	cosmossdk.io/x/evidence v0.2.0
 	cosmossdk.io/x/feegrant v0.1.1
-	cosmossdk.io/x/tx v0.13.8
+	cosmossdk.io/x/tx v0.14.0
 	cosmossdk.io/x/upgrade v0.1.4
 	github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d v0.0.0-20260402020925-1a441ce0c2c1
 	github.com/aws/aws-sdk-go-v2 v1.41.4
@@ -28,6 +28,7 @@ require (
 	github.com/celestiaorg/go-square/v2 v2.3.3
 	github.com/celestiaorg/go-square/v3 v3.0.2
 	github.com/celestiaorg/go-square/v4 v4.0.0-rc4
+	github.com/celestiaorg/merkletree v0.0.0-20210714075610-a84dc3ddbbe4
 	github.com/celestiaorg/nmt v0.24.2
 	github.com/celestiaorg/rsmt2d v0.15.1
 	github.com/cockroachdb/pebble/v2 v2.1.4
@@ -38,7 +39,7 @@ require (
 	github.com/cosmos/btcutil v1.0.5
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
-	github.com/cosmos/cosmos-sdk v0.50.13
+	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8 v8.2.0
@@ -97,6 +98,7 @@ require (
 	codeberg.org/chavacava/garif v0.2.0 // indirect
 	codeberg.org/polyfloyd/go-errorlint v1.9.0 // indirect
 	cosmossdk.io/depinject v1.2.1 // indirect
+	cosmossdk.io/schema v1.1.0 // indirect
 	dev.gaijin.team/go/exhaustruct/v4 v4.0.0 // indirect
 	dev.gaijin.team/go/golib v0.6.0 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
@@ -166,7 +168,6 @@ require (
 	github.com/butuzov/mirror v1.3.0 // indirect
 	github.com/catenacyber/perfsprint v0.10.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
-	github.com/celestiaorg/merkletree v0.0.0-20210714075610-a84dc3ddbbe4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
