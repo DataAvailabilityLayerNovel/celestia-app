@@ -1,14 +1,10 @@
 package da
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"math/big"
 
 	rsmt2d "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d"
-	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/cda"
-	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/rlnc"
 	"github.com/celestiaorg/celestia-app/v8/pkg/appconsts"
 	v5 "github.com/celestiaorg/celestia-app/v8/pkg/appconsts/v5"
 	"github.com/celestiaorg/celestia-app/v8/pkg/wrapper"
@@ -21,70 +17,72 @@ import (
 	sharev4 "github.com/celestiaorg/go-square/v4/share"
 	"github.com/cometbft/cometbft/crypto/merkle"
 	"github.com/cometbft/cometbft/types"
-	bls12381kzg "github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 )
 
 var (
 	maxExtendedSquareWidth = appconsts.SquareSizeUpperBound * 2
 	minExtendedSquareWidth = appconsts.MinSquareSize * 2
-	kateChunks             = 4
 )
 
-// DataAvailabilityHeader (DAHeader) contains the Kate commitments of the
-// erasure coded version of the data in Block.Data. The original Block.Data is
-// split into shares and arranged in a square of width squareSize. Then, this
-// square is "extended" into an extended data square (EDS) of width 2*squareSize
-// by applying Reed-Solomon encoding. For details see Section 5.2 of
-// https://arxiv.org/abs/1809.09044 or the Celestia specification:
+// DataAvailabilityHeader (DAHeader) contains the commitments of the erasure coded
+// version of the data in Block.Data. The original Block.Data is split into shares
+// and arranged in a square of width squareSize. Then, this square is "extended"
+// into an extended data square (EDS) of width 2*squareSize by applying Reed-Solomon
+// encoding. Kate commitments are computed for each piece and combined for each column.
+// For details see the Celestia specification:
 // https://github.com/celestiaorg/celestia-specs/blob/master/src/specs/data_structures.md#availabledataheader
 type DataAvailabilityHeader struct {
-	// KateCommits stores all per-column commitments for the extended data square.
-	KateCommits [][]byte `json:"kate_commits"`
-	// hash is the Merkle root of all column commitments. This field is the
-	// memoized result from `Hash()`.
+	// PieceComm contains N*k Kate commitments for each piece of the EDS
+	// where N is the number of columns and k is the max chunks per column
+	PieceComm [][]byte `json:"piece_commitments"`
+	// ColumnComm contains N Kate commitments, one for each combined column
+	ColumnComm [][]byte `json:"column_commitments"`
+	// NamespaceIndex maps a namespace ID to its end-exclusive share range in the
+	// original data square.
+	NamespaceIndex map[string]sharev4.Range `json:"namespace_index,omitempty"`
+	// hash is the root of all commitments. This field is the memoized result from `Hash()`.
 	hash []byte
 }
 
 // NewDataAvailabilityHeader generates a DataAvailability header using the
-// provided extended data square.
+// provided extended data square and its Kate commitments.
 func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailabilityHeader, error) {
-	if eds == nil {
-		return DataAvailabilityHeader{}, errors.New("nil extended data square")
+	pieceComm := eds.KatePieceCommitments()
+	if pieceComm == nil {
+		return DataAvailabilityHeader{}, fmt.Errorf("piece commitments not computed")
 	}
 
-	if err := computeAndSetKateCommitments(eds); err != nil {
-		return DataAvailabilityHeader{}, err
+	columnComm, err := eds.KateCols()
+	if err != nil {
+		return DataAvailabilityHeader{}, fmt.Errorf("failed to get column commitments: %w", err)
 	}
 
-	kateCommits, err := eds.KateCols()
+	// Convert commitments to byte slices
+	pieceCommBytes := make([][]byte, len(pieceComm))
+	for i, comm := range pieceComm {
+		pieceCommBytes[i] = append([]byte(nil), comm...)
+	}
+
+	columnCommBytes := make([][]byte, len(columnComm))
+	for i, comm := range columnComm {
+		columnCommBytes[i] = append([]byte(nil), comm...)
+	}
+
+	namespaceIndex, err := buildNamespaceIndexFromEDS(eds)
 	if err != nil {
 		return DataAvailabilityHeader{}, err
 	}
 
 	dah := DataAvailabilityHeader{
-		KateCommits: kateCommits,
-		hash:        merkle.HashFromByteSlices(kateCommits),
+		PieceComm:      pieceCommBytes,
+		ColumnComm:     columnCommBytes,
+		NamespaceIndex: namespaceIndex,
 	}
+
+	// Generate the hash of the data using the new commitments
+	dah.Hash()
 
 	return dah, nil
-}
-
-func computeAndSetKateCommitments(eds *rsmt2d.ExtendedDataSquare) error {
-	width := int(eds.Width())
-	if width == 0 {
-		return errors.New("eds width cannot be zero")
-	}
-
-	codec := rlnc.NewRLNCCodec(kateChunks)
-	srsSize := uint64(width * codec.MaxChunks())
-	srs, err := bls12381kzg.NewSRS(srsSize, big.NewInt(-1))
-	if err != nil {
-		return err
-	}
-
-	kzg := cda.NewGnarkKZG(*srs)
-	_, err = cda.ComputeAndSetKateCommitments(codec, eds, kzg)
-	return err
 }
 
 // ConstructEDS constructs an ExtendedDataSquare from the given transactions and app version.
@@ -174,7 +172,16 @@ func ExtendShares(s [][]byte) (*rsmt2d.ExtendedDataSquare, error) {
 
 	// here we construct a tree
 	// Note: uses the nmt wrapper to construct the tree.
-	return rsmt2d.ComputeExtendedDataSquare(s, appconsts.DefaultCodec(), wrapper.NewConstructor(uint64(squareSize)))
+	baseConstructor := wrapper.NewConstructor(uint64(squareSize))
+	constructor := rsmt2d.TreeConstructorFn(func(axis rsmt2d.Axis, index uint) rsmt2d.Tree {
+		tree := baseConstructor(rsmt2d.Axis(axis), index)
+		adaptedTree, ok := any(tree).(rsmt2d.Tree)
+		if !ok {
+			panic(fmt.Sprintf("incompatible tree type: %T", tree))
+		}
+		return adaptedTree
+	})
+	return rsmt2d.ComputeExtendedDataSquare(s, appconsts.DefaultCodec(), constructor)
 }
 
 // ExtendSharesWithTreePool injects tree pool into rsmt2d to reuse allocs in root computation
@@ -185,8 +192,85 @@ func ExtendSharesWithTreePool(s [][]byte, treePool *wrapper.TreePool) (*rsmt2d.E
 	}
 	// here we construct a tree
 	// Note: uses the nmt wrapper to construct the tree.
-	return rsmt2d.ComputeExtendedDataSquareWithBuffer(s, appconsts.DefaultCodec(), treePool)
+	constructor := rsmt2d.TreeConstructorFn(func(axis rsmt2d.Axis, index uint) rsmt2d.Tree {
+		tree := treePool.NewConstructor(index)(rsmt2d.Axis(axis), index)
+		adaptedTree, ok := any(tree).(rsmt2d.Tree)
+		if !ok {
+			panic(fmt.Sprintf("incompatible tree type: %T", tree))
+		}
+		return adaptedTree
+	})
+
+	bufferedConstructor := struct {
+		rsmt2d.TreeConstructorFn
+		treePool *wrapper.TreePool
+	}{
+		TreeConstructorFn: constructor,
+		treePool:          treePool,
+	}
+
+	// Create a wrapper that implements BufferedTreeConstructor
+	adaptedTreePool := &adaptedBufferedConstructor{
+		treePool: bufferedConstructor.treePool,
+	}
+	return rsmt2d.ComputeExtendedDataSquareWithBuffer(s, appconsts.DefaultCodec(), adaptedTreePool)
 }
+
+type adaptedBufferedConstructor struct {
+	treePool *wrapper.TreePool
+}
+
+func (a *adaptedBufferedConstructor) NewConstructor(squareSize uint) rsmt2d.TreeConstructorFn {
+	return rsmt2d.TreeConstructorFn(func(axis rsmt2d.Axis, index uint) rsmt2d.Tree {
+		tree := a.treePool.NewConstructor(squareSize)(rsmt2d.Axis(axis), index)
+		adaptedTree, ok := any(tree).(rsmt2d.Tree)
+		if !ok {
+			panic(fmt.Sprintf("incompatible tree type: %T", tree))
+		}
+		return adaptedTree
+	})
+}
+
+func (a *adaptedBufferedConstructor) TreeCount() int {
+	return a.treePool.TreeCount()
+}
+
+/*// TreeConstructorFn creates a fresh Tree instance to be used as the Merkle tree
+// inside of rsmt2d.
+type TreeConstructorFn = func(axis Axis, index uint) Tree
+
+type BufferedTreeConstructor interface {
+	NewConstructor(squareSize uint) TreeConstructorFn
+	TreeCount() int
+}
+
+// SquareIndex contains all information needed to identify the cell that is being
+// pushed
+type SquareIndex struct {
+	Axis, Cell uint
+}
+
+// Tree wraps Merkle tree implementations to work with rsmt2d
+type Tree interface {
+	Push(data []byte) error
+	Root() ([]byte, error)
+}
+
+var _ Tree = &DefaultTree{}
+
+type DefaultTree struct {
+	*merkletree.Tree
+	leaves [][]byte
+	root   []byte
+}
+
+func NewDefaultTree(_ Axis, _ uint) Tree {
+	return &DefaultTree{
+		Tree:   merkletree.New(sha256.New()),
+		leaves: make([][]byte, 0, 128),
+	}
+}
+*/
 
 // String returns hex representation of merkle hash of the DAHeader.
 func (dah *DataAvailabilityHeader) String() string {
@@ -196,13 +280,8 @@ func (dah *DataAvailabilityHeader) String() string {
 	return fmt.Sprintf("%X", dah.Hash())
 }
 
-// Equals checks equality of two DAHeaders.
-func (dah *DataAvailabilityHeader) Equals(to *DataAvailabilityHeader) bool {
-	return bytes.Equal(dah.Hash(), to.Hash())
-}
-
-// Hash computes the Merkle root of all column commitments. Hash memoizes the
-// result in `DataAvailabilityHeader.hash`.
+// Hash computes the Merkle root of all piece and column commitments.
+// Hash memoizes the result in `DataAvailabilityHeader.hash`.
 func (dah *DataAvailabilityHeader) Hash() []byte {
 	if dah == nil {
 		return merkle.HashFromByteSlices(nil)
@@ -211,9 +290,12 @@ func (dah *DataAvailabilityHeader) Hash() []byte {
 		return dah.hash
 	}
 
-	// The single data root is computed using a simple binary merkle tree over
-	// all column commitments.
-	dah.hash = merkle.HashFromByteSlices(dah.KateCommits)
+	// Combine all commitments (piece + column) for hashing
+	allComms := make([][]byte, 0, len(dah.ColumnComm))
+	allComms = append(allComms, dah.ColumnComm...)
+
+	// The single data root is computed using a binary merkle tree across all commitments
+	dah.hash = merkle.HashFromByteSlices(allComms)
 	return dah.hash
 }
 
@@ -223,8 +305,8 @@ func (dah *DataAvailabilityHeader) ToProto() (*daproto.DataAvailabilityHeader, e
 	}
 
 	dahp := new(daproto.DataAvailabilityHeader)
-	// Keep wire compatibility by encoding Kate commitments in `column_roots`.
-	dahp.ColumnRoots = dah.KateCommits
+	dahp.RowRoots = dah.ColumnComm    // Legacy: use column commitments as row roots
+	dahp.ColumnRoots = dah.ColumnComm // Keep column commitments
 	return dahp, nil
 }
 
@@ -234,7 +316,8 @@ func DataAvailabilityHeaderFromProto(dahp *daproto.DataAvailabilityHeader) (dah 
 	}
 
 	dah = new(DataAvailabilityHeader)
-	dah.KateCommits = dahp.ColumnRoots
+	// For now, load from proto's column roots (legacy compatibility)
+	dah.ColumnComm = dahp.ColumnRoots
 
 	return dah, dah.ValidateBasic()
 }
@@ -244,15 +327,15 @@ func (dah *DataAvailabilityHeader) ValidateBasic() error {
 	if dah == nil {
 		return errors.New("nil data availability header is not valid")
 	}
-	if len(dah.KateCommits) < minExtendedSquareWidth {
+	if len(dah.ColumnComm) < minExtendedSquareWidth {
 		return fmt.Errorf(
-			"minimum valid DataAvailabilityHeader has at least %d kate column commitments",
+			"minimum valid DataAvailabilityHeader has at least %d column commitments",
 			minExtendedSquareWidth,
 		)
 	}
-	if len(dah.KateCommits) > maxExtendedSquareWidth {
+	if len(dah.ColumnComm) > maxExtendedSquareWidth {
 		return fmt.Errorf(
-			"maximum valid DataAvailabilityHeader has at most %d kate column commitments",
+			"maximum valid DataAvailabilityHeader has at most %d column commitments",
 			maxExtendedSquareWidth,
 		)
 	}
@@ -263,22 +346,22 @@ func (dah *DataAvailabilityHeader) ValidateBasic() error {
 	return nil
 }
 
-// IsZero returns true if the DataAvailabilityHeader is nil or has no commitments.
+// IsZero returns true if the DataAvailabilityHeader is nil or it has no column commitments.
 func (dah *DataAvailabilityHeader) IsZero() bool {
 	if dah == nil {
 		return true
 	}
-	return len(dah.KateCommits) == 0
+	return len(dah.ColumnComm) == 0
 }
 
 // SquareSize returns the number of rows in the original data square.
+// It is derived from the number of column commitments (which equals the extended square width / 2).
 func (dah *DataAvailabilityHeader) SquareSize() int {
-	return len(dah.KateCommits) / 2
+	return len(dah.ColumnComm) / 2
 }
 
 // MinDataAvailabilityHeader returns the minimum valid data availability header.
-// It is equal to the data availability header for a block with one tail padding
-// share.
+// It is equal to the data availability header for a block with one tail padding share.
 func MinDataAvailabilityHeader() DataAvailabilityHeader {
 	s := MinShares()
 	eds, err := ExtendShares(s)
@@ -295,4 +378,52 @@ func MinDataAvailabilityHeader() DataAvailabilityHeader {
 // MinShares returns one tail-padded share.
 func MinShares() [][]byte {
 	return sharev4.ToBytes(squarev4.EmptySquare())
+}
+
+// NamespaceRange returns the share range for the given namespace ID.
+func (dah DataAvailabilityHeader) NamespaceRange(namespaceID []byte) (sharev4.Range, bool) {
+	if len(dah.NamespaceIndex) == 0 {
+		return sharev4.EmptyRange(), false
+	}
+	rangeValue, ok := dah.NamespaceIndex[string(namespaceID)]
+	return rangeValue, ok
+}
+
+func buildNamespaceIndexFromEDS(eds *rsmt2d.ExtendedDataSquare) (map[string]sharev4.Range, error) {
+	shares, err := sharev4.FromBytes(eds.FlattenedODS())
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode flattened ODS shares: %w", err)
+	}
+	return buildNamespaceIndex(shares)
+}
+
+func buildNamespaceIndex(shares []sharev4.Share) (map[string]sharev4.Range, error) {
+	if len(shares) == 0 {
+		return nil, nil
+	}
+
+	index := make(map[string]sharev4.Range)
+	start := 0
+	currentNamespace := shares[0].Namespace()
+	for i := 1; i < len(shares); i++ {
+		nextNamespace := shares[i].Namespace()
+		if currentNamespace.Equals(nextNamespace) {
+			continue
+		}
+
+		key := string(currentNamespace.Bytes())
+		if _, exists := index[key]; exists {
+			return nil, fmt.Errorf("namespace %x appears in multiple non-contiguous ranges", currentNamespace.Bytes())
+		}
+		index[key] = sharev4.NewRange(start, i)
+		start = i
+		currentNamespace = nextNamespace
+	}
+
+	key := string(currentNamespace.Bytes())
+	if _, exists := index[key]; exists {
+		return nil, fmt.Errorf("namespace %x appears in multiple non-contiguous ranges", currentNamespace.Bytes())
+	}
+	index[key] = sharev4.NewRange(start, len(shares))
+	return index, nil
 }

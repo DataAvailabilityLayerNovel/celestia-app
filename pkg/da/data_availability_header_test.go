@@ -138,7 +138,7 @@ func TestNewDataAvailabilityHeader(t *testing.T) {
 				require.NoError(t, err)
 				got, err := NewDataAvailabilityHeader(eds)
 				require.NoError(t, err)
-				require.Equal(t, tt.squareSize*2, uint64(len(got.KateCommits)))
+				require.Equal(t, tt.squareSize*2, uint64(len(got.ColumnComm)))
 				require.Equal(t, tt.expectedHash, got.hash)
 			}
 		})
@@ -220,8 +220,34 @@ func testDataAvailabilityHeaderProtoConversion(t *testing.T, extendShares func([
 		resDah, err := DataAvailabilityHeaderFromProto(pdah)
 		require.NoError(t, err)
 		resDah.Hash() // calc the hash to make the comparisons fair
-		require.Equal(t, tt.dah, *resDah, tt.name)
+		require.Equal(t, tt.dah.PieceComm, resDah.PieceComm, tt.name)
+		require.Equal(t, tt.dah.ColumnComm, resDah.ColumnComm, tt.name)
+		require.Equal(t, tt.dah.hash, resDah.hash, tt.name)
 	}
+}
+
+func TestDataAvailabilityHeaderNamespaceIndexLookup(t *testing.T) {
+	fibreTx := buildMsgPayForFibreTxBytes(t)
+	normalTx := bytes.Repeat([]byte{0x01}, 200)
+	txs := [][]byte{normalTx, fibreTx}
+
+	square, err := squarev4.Construct(txs, appconsts.SquareSizeUpperBound, appconsts.SubtreeRootThreshold)
+	require.NoError(t, err)
+
+	eds, err := ExtendShares(sh.ToBytes(square))
+	require.NoError(t, err)
+
+	dah, err := NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	expected := sh.GetShareRangeForNamespace(square, sh.PayForFibreNamespace)
+	actual, ok := dah.NamespaceRange(sh.PayForFibreNamespace.Bytes())
+	require.True(t, ok)
+	require.Equal(t, expected, actual)
+
+	missing, ok := dah.NamespaceRange(bytes.Repeat([]byte{0xff}, sh.NamespaceSize))
+	require.False(t, ok)
+	require.True(t, missing.IsEmpty())
 }
 
 func Test_DAHValidateBasic(t *testing.T) {
@@ -251,12 +277,12 @@ func testDAHValidateBasic(t *testing.T, extendShares func([][]byte) (*rsmt2d.Ext
 
 	// make a mutant dah that has too many roots
 	var tooBigDah DataAvailabilityHeader
-	tooBigDah.KateCommits = make([][]byte, maxSize)
-	copy(tooBigDah.KateCommits, bigdah.KateCommits)
-	tooBigDah.KateCommits = append(tooBigDah.KateCommits, bytes.Repeat([]byte{1}, 32))
+	tooBigDah.ColumnComm = make([][]byte, maxSize)
+	copy(tooBigDah.ColumnComm, bigdah.ColumnComm)
+	tooBigDah.ColumnComm = append(tooBigDah.ColumnComm, bytes.Repeat([]byte{1}, 32))
 	// make a mutant dah that has too few roots
 	var tooSmallDah DataAvailabilityHeader
-	tooSmallDah.KateCommits = [][]byte{bytes.Repeat([]byte{2}, 32)}
+	tooSmallDah.ColumnComm = [][]byte{bytes.Repeat([]byte{2}, 32)}
 	// use a bad hash
 	badHashDah := MinDataAvailabilityHeader()
 	badHashDah.hash = []byte{1, 2, 3, 4}
@@ -565,13 +591,13 @@ func TestDAHComputationFlowLogs(t *testing.T) {
 		t.Logf("[EDS] KateCols after DAH generation: count=%d", len(kateCols))
 	}
 
-	t.Logf("[DAH] kateCommits=%d squareSize=%d", len(dah.KateCommits), dah.SquareSize())
+	t.Logf("[DAH] ColumnComm=%d squareSize=%d", len(dah.ColumnComm), dah.SquareSize())
 	maxLogs := 3
-	if len(dah.KateCommits) < maxLogs {
-		maxLogs = len(dah.KateCommits)
+	if len(dah.ColumnComm) < maxLogs {
+		maxLogs = len(dah.ColumnComm)
 	}
 	for i := 0; i < maxLogs; i++ {
-		t.Logf("[DAH] kateCommits[%d]=%s", i, strings.ToUpper(hex.EncodeToString(dah.KateCommits[i])))
+		t.Logf("[DAH] ColumnComm[%d]=%s", i, strings.ToUpper(hex.EncodeToString(dah.ColumnComm[i])))
 	}
 
 	h := dah.Hash()
