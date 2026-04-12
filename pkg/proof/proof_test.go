@@ -9,6 +9,7 @@ import (
 	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/cda"
 	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/rlnc"
 	"github.com/celestiaorg/celestia-app/v8/pkg/da"
+	"github.com/celestiaorg/celestia-app/v8/pkg/proof"
 	"github.com/celestiaorg/go-square/v4/share"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 	"github.com/stretchr/testify/assert"
@@ -125,8 +126,62 @@ func TestPerCellPairingVerificationFlow(t *testing.T) {
 	assert.True(t, ok)
 }
 
+func TestBuildAndVerifyKZGRangeProof(t *testing.T) {
+	dataSquare, err := makeOrderedBlobSquare(256)
+	require.NoError(t, err)
+
+	eds, err := da.ExtendShares(dataSquare)
+	require.NoError(t, err)
+
+	codec := rlnc.NewRLNCCodec(4)
+	srs, err := kzg.NewSRS(128, big.NewInt(-1))
+	require.NoError(t, err)
+	provider := cda.NewGnarkKZG(*srs)
+
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	require.NoError(t, err)
+
+	dah, err := da.NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	ns := orderedBlobNamespace()
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider)
+	require.NoError(t, err)
+
+	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
+	require.NoError(t, err)
+}
+
+func TestVerifyKZGRangeProofRejectsTamperedColumnCommitment(t *testing.T) {
+	dataSquare, err := makeOrderedBlobSquare(256)
+	require.NoError(t, err)
+
+	eds, err := da.ExtendShares(dataSquare)
+	require.NoError(t, err)
+
+	codec := rlnc.NewRLNCCodec(4)
+	srs, err := kzg.NewSRS(128, big.NewInt(-1))
+	require.NoError(t, err)
+	provider := cda.NewGnarkKZG(*srs)
+
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	require.NoError(t, err)
+
+	dah, err := da.NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	ns := orderedBlobNamespace()
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider)
+	require.NoError(t, err)
+	require.NotEmpty(t, rangeProof.ColumnProofs)
+
+	rangeProof.ColumnProofs[0].Commitment[0] ^= 0x01
+	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
+	require.Error(t, err)
+}
+
 func makeOrderedBlobSquare(width int) ([][]byte, error) {
-	namespace := share.MustNewV0Namespace(bytes.Repeat([]byte{1}, share.NamespaceVersionZeroIDSize))
+	namespace := orderedBlobNamespace()
 	blobData := bytes.Repeat([]byte{1}, share.AvailableBytesFromSparseShares(width))
 	blob, err := share.NewV0Blob(namespace, blobData)
 	if err != nil {
@@ -140,6 +195,10 @@ func makeOrderedBlobSquare(width int) ([][]byte, error) {
 		return nil, assert.AnError
 	}
 	return share.ToBytes(shares), nil
+}
+
+func orderedBlobNamespace() share.Namespace {
+	return share.MustNewV0Namespace(bytes.Repeat([]byte{1}, share.NamespaceVersionZeroIDSize))
 }
 
 func setKateCommitments(t *testing.T, eds *rsmt2d.ExtendedDataSquare) {

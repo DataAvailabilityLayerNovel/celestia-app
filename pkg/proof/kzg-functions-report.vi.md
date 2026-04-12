@@ -6,180 +6,154 @@ Ngay cap nhat: 2026-04-12
 
 Tai lieu nay tong hop trong mot file duy nhat:
 
-- Cac ham da xay dung lien quan muc tieu KZG.
-- Cac luong thuc thi da co kiem thu trong pkg/proof.
+- Cac ham lien quan muc tieu KZG da duoc trien khai va da duoc test.
+- Cac khung KZG cu trong nhom kzgexperimental va trang thai con ton dong.
 
 Luu y:
 
-- Cac file KZG trong pkg/proof hien dang gate boi build tag kzgexperimental.
-- Luong NMT cu van la luong mac dinh khi khong bat tag.
+- Luong mac dinh khong bat tag van la luong NMT legacy.
+- Nhom file KZG experimental van gate boi build tag kzgexperimental.
 
-## 2) Ham da xay dung lien quan KZG
+## 2) Ham da trien khai production-safe cho range-level
 
-### 2.1 Generate proof va helper
+File: pkg/proof/kzg_range_proof.go
 
-File: pkg/proof/proof_generation_kzg.go
+### 2.1 Wire format range-level
 
-- NewShareInclusionProofFromEDSWithKZG
-  - Tao proof huong KZG tu EDS + DAH + namespace.
-  - Buoc chinh: lay range namespace, xac dinh cot, tao proof theo cot, dong goi output.
-  - Trang thai: skeleton, chua production-ready.
+- KZGRangeProof
+  - NamespaceID, NamespaceVersion.
+  - StartCell, EndCell (end-exclusive).
+  - DataRoot, Width, MaxChunks.
+  - ColumnProofs, CellProofs.
 
-- createKZGMultiProofForColumn
-  - Khung quotient polynomial cho mot cot.
-  - Trang thai: partial, phan commit proof point con placeholder.
+- KZGColumnProof
+  - Column.
+  - Commitment.
+  - Proof (Merkle proof tu header ColumnComm).
 
-- shareToByteSlice
-  - Helper convert share sang [][]byte.
-  - Trang thai: dung duoc.
-
-- extractSharesForNamespace
-  - Cat du lieu share theo range.
-  - Trang thai: can chuan hoa tiep voi ODS/EDS mapping cuoi cung.
-
-- squareSizeFromODS
-  - Suy square size tu do dai ODS.
-  - Trang thai: helper co ban.
-
-- VerifyKZGMultiProofAgainstColumnCommitment
-  - Khung verify proof cot.
-  - Trang thai: placeholder.
-
-### 2.2 Verify proof KZG
-
-File: pkg/proof/proof_verification_kzg.go
-
-- VerifyShareProofKZG
-  - Khung verify tong the proof.
-  - Trang thai: partial.
-
-- verifyColumnPairing
-  - Pairing check cap cot.
-  - Trang thai: TODO placeholder.
-
-- validateShareDataConsistency
-  - Check hinh dang du lieu proof.
-  - Trang thai: basic.
-
-- VerifyCommitmentProofKZG
-  - Khung verify commitment inclusion.
-  - Trang thai: partial.
-
-- verifyColumnInDataRoot
-  - Membership check commitment len root.
-  - Trang thai: TODO placeholder.
-
-- CheckProofBoundaries, ValidateProofStructure, PolynomialCommitmentSize, ProofSize
-  - Utility va structural checks.
-  - Trang thai: basic.
-
-- ReconstructInterpolationCommitment
-  - Dung commitment noi suy tu shares.
-  - Trang thai: partial, can review tiep theo API scalar.
-
-### 2.3 Polynomial utilities
-
-File: pkg/proof/proof_polynomial.go
-
-- InterpolatePolynomial
-- BuildVanishingPolynomial
-- ComputeQuotientPolynomial
-- ShareBytesToFieldElements
-- FieldElementsToShareBytes
-- ExtractCellsFromColumn
-- ValidatePolynomialEvaluation
-- evaluatePolynomial
+- KZGCellProof
+  - Row, Column.
+  - ShareData.
+  - PieceOpenProofs (k opening proofs cua cell).
 
 Trang thai:
 
-- Da co khung tinh toan.
-- Chua dong bo day du cho production pipeline khi bat tag experimental.
+- Da trien khai va da su dung trong test end-to-end.
 
-### 2.4 Model va type KZG
+### 2.2 Tao range proof tu EDS + DAH
 
-File: pkg/proof/proof_kzg.go
-
-- KZGMultiProof
-- CommitmentProof
-- NamespaceRange
-- PairingVerificationInput
-- NewKZGMultiProof
-- NewCommitmentProof
-- NewNamespaceRange
+- NewKZGRangeProofFromEDS
+  - Input: EDS, DAH, namespace, codec, provider.
+  - Buoc 1: Lay namespace range tu DAH.NamespaceRange.
+  - Buoc 2: Xac dinh cot bi anh huong tu range share.
+  - Buoc 3: Tao commitment inclusion proof theo cot tu dah.ColumnComm bang merkle.ProofsFromByteSlices.
+  - Buoc 4: Tao opening proof grid bang cda.ComputeOpenProofCells va cat theo (row,col).
+  - Buoc 5: Dong goi ve KZGRangeProof.
 
 Trang thai:
 
-- Model da co.
-- Con can dong bo voi proto final khi chot wire format.
+- Da trien khai day du va duoc dung trong test build+verify.
 
-### 2.5 Primitive can dung tu cda
+### 2.3 Verify 2 pha trong implementation
 
-Module cda (dependency):
+- VerifyKZGRangeProof
+  - Pha 1: commitment inclusion.
+    - Check DataRoot khop dah.Hash().
+    - Check commitment proof cot khop dah.ColumnComm.
+    - Verify Proof.Verify(root, commitment).
+  - Pha 2: per-cell opening verify.
+    - Check cell chi tham chieu cot da verify.
+    - CombineProofs theo coeff deterministic GenerateCoeffsByColHeight.
+    - Doc claimed value tu combined opening proof.
+    - Pairing verify bang provider.Verify.
+
+Trang thai:
+
+- Da trien khai day du, khong con placeholder trong flow moi nay.
+
+### 2.4 Helper
+
+- clone2D
+  - Deep-copy [][]byte cho proof aunts/du lieu nested.
+
+Trang thai:
+
+- Da dung trong flow tao proof.
+
+## 3) Primitive da duoc su dung trong flow moi
+
+Tu dependency cda va codec:
 
 - cda.ComputeAndSetKateCommitments
   - Tinh PieceComm va ColumnComm, set vao EDS.
 
 - cda.ComputeOpenProofCells
-  - Sinh opening proof cho toan bo grid.
+  - Tao opening proofs cho toan bo grid.
 
 - codec.GenerateCoeffsByColHeight
-  - Sinh coeff deterministic theo context dau vao.
+  - Sinh coeff deterministic theo (column, width).
 
-- kzgProvider.Combine va kzgProvider.CombineProofs
-  - Combine commitment/proof theo coeff RLNC.
+- provider.Combine / provider.CombineProofs
+  - Combine commitments/proofs theo coeff RLNC.
 
-- kzgProvider.Verify
-  - Chay pairing verify cho opening proof.
+- provider.Verify
+  - Pairing verify opening proof theo cot.
 
-Ghi chu:
-
-- Neu module pin co ComputeOpenProofCell thi uu tien ham single-cell.
-- Neu chua co thi fallback ComputeOpenProofCells + cat index cell.
-
-## 3) Luong thuc thi da co kiem thu
+## 4) Luong thuc thi da co kiem thu
 
 File test: pkg/proof/proof_test.go
 
-### 3.1 Commitment flow va proof object co the tao
+### 4.1 Commitment flow va guard
 
 - TestKateCommitmentsAndColumnProofs
-  - Tao EDS.
-  - Tinh va set commitments.
-  - Tao DAH thanh cong.
+  - Tao EDS, set commitments, tao DAH.
   - KateCols khop ColumnComm.
-  - Tao duoc Kate commitment proof cho mot cot.
-
-### 3.2 Guard khi chua set commitment
+  - Tao duoc commitment proof cho cot.
 
 - TestKateRootRequiresCommitments
-  - Chua goi ComputeAndSetKateCommitments.
-  - KateRoot va NewDataAvailabilityHeader phai tra loi.
+  - Neu chua set commitments thi KateRoot/NewDataAvailabilityHeader tra loi.
 
-### 3.3 ColumnComm combine dung tu PieceComm + coeff deterministic
+### 4.2 Deterministic combine
 
 - TestColumnCommitmentDeterministicCombine
-  - Lay piece theo cot: PieceComm[col*k : (col+1)*k].
-  - coeff = GenerateCoeffsByColHeight(col, n).
-  - provider.Combine(...) phai bang ColumnComm[col].
+  - Verify ColumnComm[col] = Combine(PieceComm[col*k:(col+1)*k], coeffs).
 
-### 3.4 Luong pairing verify theo tung cell
+### 4.3 Per-cell pairing flow
 
 - TestPerCellPairingVerificationFlow
-  - Lay open proofs cua cell (row,col) tu tap open proof.
-  - CombineProofs theo cung coeff deterministic cua cot.
-  - Lay claimed value tu combined proof.
-  - Verify(ColumnComm[col], row, claimedValue, combinedProof) phai true.
+  - Lay open proofs cua mot cell.
+  - CombineProofs theo coeff cot.
+  - Rut claimed value tu combined proof.
+  - provider.Verify phai true.
 
-## 4) Ket luan hien trang
+### 4.4 Range-level end-to-end va tamper case
 
-- Da co primitive va test cho commitment flow va pairing execution flow cap cell.
-- Da co test xac minh ColumnComm la ket qua combine PieceComm theo coeff deterministic.
-- Phan verify tong the trong pkg/proof/proof_verification_kzg.go van la khung va con TODO cho cac ham placeholder.
+- TestBuildAndVerifyKZGRangeProof
+  - Build KZGRangeProof tu EDS+DAH+namespace.
+  - VerifyKZGRangeProof pass.
 
-## 5) Huong tiep theo
+- TestVerifyKZGRangeProofRejectsTamperedColumnCommitment
+  - Tamper commitment trong ColumnProofs.
+  - VerifyKZGRangeProof phai fail.
 
-1. Chot wire format proof range-level.
-2. Noi verify 2 pha vao implementation production:
-   - Pha commitment inclusion.
-   - Pha per-cell opening verify.
-3. Chuyen cac ham TODO placeholder sang pairing check that su.
+## 5) Ket luan hien trang
+
+- Muc tieu trong plan da duoc thuc hien tren flow moi:
+  - Da chot wire format range-level.
+  - Da noi verify 2 pha vao implementation.
+  - Da chay pairing check that su trong verify path moi.
+- Package test cua pkg/proof dang pass o default flow.
+
+## 6) Ton dong va buoc tiep theo
+
+### 6.1 Nhom kzgexperimental cu
+
+- Cac file nhu proof_generation_kzg.go, proof_verification_kzg.go, proof_polynomial.go van con partial/TODO va hien khong pass khi bat -tags=kzgexperimental.
+
+### 6.2 Dong bo schema va generated code
+
+- Con viec dong bo proto/generated code de dua ShareProof wire model sang KZG-native nhat quan.
+
+### 6.3 Tich hop API
+
+- Can quyet dinh lo trinh thay the dan caller tu legacy flow sang KZGRangeProof (hoac bo sung adapter giu backward compatibility).
