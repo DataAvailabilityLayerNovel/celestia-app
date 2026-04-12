@@ -1,12 +1,14 @@
+//go:build kzgexperimental
+
 package proof
 
 import (
 	"fmt"
 	"math"
 
+	rsmt2d "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d"
 	"github.com/celestiaorg/celestia-app/v8/pkg/da"
 	"github.com/celestiaorg/go-square/v4/share"
-	"github.com/celestiaorg/rsmt2d"
 )
 
 // NewShareInclusionProofFromEDSWithKZG creates a KZG-based inclusion proof for shares.

@@ -1,3 +1,5 @@
+//go:build kzgexperimental
+
 package proof
 
 import (
