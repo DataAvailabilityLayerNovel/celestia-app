@@ -38,25 +38,6 @@ func TestNilDataAvailabilityHeaderHashDoesntCrash(t *testing.T) {
 	assert.Equal(t, emptyBytes, (*DataAvailabilityHeader)(nil).Hash())
 	assert.Equal(t, emptyBytes, new(DataAvailabilityHeader).Hash())
 }
-
-// TestMinDataAvailabilityHeader tests the minimum valid data availability header.
-//
-// This test verifies that MinDataAvailabilityHeader() produces a deterministic hash
-// that matches the expected value. The expected hash is generated through the following process:
-//
-// 1. Create minimum shares: MinShareCount (1) tail padding shares are created
-// 2. Extend shares: The single share is extended using Reed-Solomon encoding to create a 2x2 extended data square
-// 3. Extract roots: Row and column merkle roots are computed from the extended square:
-//   - 2 row roots (one for each row of the extended square)
-//   - 2 column roots (one for each column of the extended square)
-//
-// 4. Compute hash: A binary merkle tree is built from all Kate column commitments
-// to produce the final data availability header hash.
-//
-// The expectedHash below (0xbe61258b...) represents the merkle root of Kate
-// column commitments from a 2x2 extended data square containing one tail padding share.
-// This hash is deterministic and will always be the same for the minimum data availability header
-// since it represents the smallest possible valid data square in the Celestia network.
 func TestMinDataAvailabilityHeader(t *testing.T) {
 	dah := MinDataAvailabilityHeader()
 	// Expected hash generated from merkle root of all Kate column commitments.
@@ -595,6 +576,95 @@ func TestDAHComputationFlowLogs(t *testing.T) {
 	require.NoError(t, dah.ValidateBasic())
 	require.False(t, dah.IsZero())
 	require.Equal(t, int(eds.Width()/2), dah.SquareSize())
+}
+
+func TestLogDataMatrixAndDAH(t *testing.T) {
+	appVersion := appconsts.Version
+	maxSquareSize := -1
+
+	fibreTx := buildMsgPayForFibreTxBytes(t)
+	normalTx := bytes.Repeat([]byte{0xCD}, 180)
+	txs := [][]byte{normalTx, fibreTx}
+
+	eds, err := ConstructEDS(txs, appVersion, maxSquareSize)
+	require.NoError(t, err)
+	require.NotNil(t, eds)
+
+	originalWidth := int(eds.Width() / 2)
+	originalShares, err := sh.FromBytes(eds.FlattenedODS())
+	require.NoError(t, err)
+	logShareMatrix(t, "ODS", originalShares, originalWidth)
+
+	extendedWidth := int(eds.Width())
+	extendedShares, err := sh.FromBytes(eds.Flattened())
+	require.NoError(t, err)
+	logShareMatrix(t, "EDS", extendedShares, extendedWidth)
+
+	dah, err := NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	t.Logf("[DAH] hash=%s square_size=%d piece_commitments=%d column_commitments=%d namespace_index_entries=%d",
+		strings.ToUpper(hex.EncodeToString(dah.Hash())),
+		dah.SquareSize(),
+		len(dah.PieceComm),
+		len(dah.ColumnComm),
+		len(dah.NamespaceIndex),
+	)
+
+	maxLogs := 4
+	if len(dah.PieceComm) < maxLogs {
+		maxLogs = len(dah.PieceComm)
+	}
+	for i := 0; i < maxLogs; i++ {
+		t.Logf("[DAH] piece_commitment[%d]=%s", i, strings.ToUpper(hex.EncodeToString(dah.PieceComm[i])))
+	}
+
+	maxLogs = 4
+	if len(dah.ColumnComm) < maxLogs {
+		maxLogs = len(dah.ColumnComm)
+	}
+	for i := 0; i < maxLogs; i++ {
+		t.Logf("[DAH] column_commitment[%d]=%s", i, strings.ToUpper(hex.EncodeToString(dah.ColumnComm[i])))
+	}
+
+	namespaceIDs := make([]string, 0, len(dah.NamespaceIndex))
+	for ns := range dah.NamespaceIndex {
+		namespaceIDs = append(namespaceIDs, strings.ToUpper(hex.EncodeToString([]byte(ns))))
+	}
+	sort.Strings(namespaceIDs)
+	for _, nsHex := range namespaceIDs {
+		rng := dah.NamespaceIndex[string(mustDecodeHex(t, nsHex))]
+		t.Logf("[DAH] namespace=%s range=[%d,%d)", nsHex, rng.Start, rng.End)
+	}
+}
+
+func logShareMatrix(t *testing.T, label string, shares []sh.Share, width int) {
+	t.Helper()
+	require.Equal(t, width*width, len(shares))
+	t.Logf("[%s] width=%d cells=%d", label, width, len(shares))
+
+	for row := 0; row < width; row++ {
+		cells := make([]string, 0, width)
+		for col := 0; col < width; col++ {
+			idx := row*width + col
+			cellBytes := shares[idx].ToBytes()
+			namespace := strings.ToUpper(hex.EncodeToString(shares[idx].Namespace().Bytes()))
+			prefixLen := 8
+			if len(cellBytes) < prefixLen {
+				prefixLen = len(cellBytes)
+			}
+			prefix := strings.ToUpper(hex.EncodeToString(cellBytes[:prefixLen]))
+			cells = append(cells, fmt.Sprintf("%s:%s", namespace, prefix))
+		}
+		t.Logf("[%s] row_%02d %s", label, row, strings.Join(cells, " | "))
+	}
+}
+
+func mustDecodeHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	require.NoError(t, err)
+	return b
 }
 
 // buildMsgPayForFibreTxBytes constructs Cosmos SDK Tx proto bytes containing a

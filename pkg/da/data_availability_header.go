@@ -36,6 +36,8 @@ var (
 // For details see the Celestia specification:
 // https://github.com/celestiaorg/celestia-specs/blob/master/src/specs/data_structures.md#availabledataheader
 type DataAvailabilityHeader struct {
+	// Use for gen deterministic coeffs when calculate KZG
+	d int
 	// PieceComm contains N*k Kate commitments for each piece of the EDS
 	// where N is the number of columns and k is the max chunks per column
 	PieceComm [][]byte `json:"piece_commitments"`
@@ -54,7 +56,9 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	if eds == nil {
 		return DataAvailabilityHeader{}, fmt.Errorf("eds is nil")
 	}
-
+	// NOTE: The current rlnc-rsmt2d API uses this value as the iteration bound
+	// for column commitment generation, so it must match the EDS width.
+	d := int(eds.Width())
 	codec := rlnc.NewRLNCCodec(4)
 	srsSize := uint64(eds.Width() * 4)
 	srs, err := bls12381kzg.NewSRS(srsSize, big.NewInt(-1))
@@ -63,7 +67,7 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	}
 	provider := cda.NewGnarkKZG(*srs)
 
-	publishData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	publishData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	if err != nil {
 		return DataAvailabilityHeader{}, fmt.Errorf("failed to get Kate commitments: %w", err)
 	}
@@ -86,6 +90,7 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	}
 
 	dah := DataAvailabilityHeader{
+		d:              d,
 		PieceComm:      pieceCommBytes,
 		ColumnComm:     columnCommBytes,
 		NamespaceIndex: namespaceIndex,

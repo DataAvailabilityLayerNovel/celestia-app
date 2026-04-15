@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const d = 30000
+
 func TestKateCommitmentsAndColumnProofs(t *testing.T) {
 	dataSquare, err := makeOrderedBlobSquare(256)
 	require.NoError(t, err)
@@ -65,7 +67,7 @@ func TestColumnCommitmentDeterministicCombine(t *testing.T) {
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
-	pubData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	pubData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	require.NoError(t, err)
 
 	k := codec.MaxChunks()
@@ -74,7 +76,7 @@ func TestColumnCommitmentDeterministicCombine(t *testing.T) {
 	require.Len(t, pubData.ColumnComm, n)
 
 	for col := 0; col < n; col++ {
-		coeffs := codec.GenerateCoeffsByColHeight(col, n)
+		coeffs := codec.GenerateCoeffsByColSeed(col, d)
 		start := col * k
 		combined, err := provider.Combine(pubData.PieceComm[start:start+k], coeffs)
 		require.NoError(t, err)
@@ -94,7 +96,7 @@ func TestPerCellPairingVerificationFlow(t *testing.T) {
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
-	pubData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	pubData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	require.NoError(t, err)
 
 	openProofs, err := cda.ComputeOpenProofCells(codec, eds, provider)
@@ -108,7 +110,7 @@ func TestPerCellPairingVerificationFlow(t *testing.T) {
 	cellProofs := proofsForCell(openProofs, row, col, n, k)
 	require.Len(t, cellProofs, k)
 
-	combinedProof, err := provider.CombineProofs(cellProofs, codec.GenerateCoeffsByColHeight(col, n))
+	combinedProof, err := provider.CombineProofs(cellProofs, codec.GenerateCoeffsByColSeed(col, d))
 	require.NoError(t, err)
 
 	// Use the claimed value encoded in the combined opening proof as verify input.
@@ -133,7 +135,7 @@ func TestBuildAndVerifyKZGRangeProof(t *testing.T) {
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
-	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	require.NoError(t, err)
 
 	dah, err := da.NewDataAvailabilityHeader(eds)
@@ -159,7 +161,7 @@ func TestVerifyKZGRangeProofRejectsTamperedColumnCommitment(t *testing.T) {
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
-	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	require.NoError(t, err)
 
 	dah, err := da.NewDataAvailabilityHeader(eds)
@@ -204,7 +206,7 @@ func setKateCommitments(t *testing.T, eds *rsmt2d.ExtendedDataSquare) {
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
-	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
 	require.NoError(t, err)
 }
 
