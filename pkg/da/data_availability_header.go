@@ -3,8 +3,11 @@ package da
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	rsmt2d "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d"
+	cda "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/cda"
+	rlnc "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/rlnc"
 	"github.com/celestiaorg/celestia-app/v8/pkg/appconsts"
 	v5 "github.com/celestiaorg/celestia-app/v8/pkg/appconsts/v5"
 	"github.com/celestiaorg/celestia-app/v8/pkg/wrapper"
@@ -17,6 +20,7 @@ import (
 	sharev4 "github.com/celestiaorg/go-square/v4/share"
 	"github.com/cometbft/cometbft/crypto/merkle"
 	"github.com/cometbft/cometbft/types"
+	bls12381kzg "github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 )
 
 var (
@@ -47,16 +51,24 @@ type DataAvailabilityHeader struct {
 // NewDataAvailabilityHeader generates a DataAvailability header using the
 // provided extended data square and its Kate commitments.
 func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailabilityHeader, error) {
-	pieceComm := eds.KatePieceCommitments()
-	if pieceComm == nil {
-		return DataAvailabilityHeader{}, fmt.Errorf("piece commitments not computed")
+	if eds == nil {
+		return DataAvailabilityHeader{}, fmt.Errorf("eds is nil")
 	}
 
-	columnComm, err := eds.KateCols()
+	codec := rlnc.NewRLNCCodec(4)
+	srsSize := uint64(eds.Width() * 4)
+	srs, err := bls12381kzg.NewSRS(srsSize, big.NewInt(-1))
 	if err != nil {
-		return DataAvailabilityHeader{}, fmt.Errorf("failed to get column commitments: %w", err)
+		return DataAvailabilityHeader{}, fmt.Errorf("failed to create KZG SRS: %w", err)
 	}
+	provider := cda.NewGnarkKZG(*srs)
 
+	publishData, err := cda.ComputeAndSetKateCommitments(codec, eds, provider)
+	if err != nil {
+		return DataAvailabilityHeader{}, fmt.Errorf("failed to get Kate commitments: %w", err)
+	}
+	pieceComm := publishData.PieceComm
+	columnComm := publishData.ColumnComm
 	// Convert commitments to byte slices
 	pieceCommBytes := make([][]byte, len(pieceComm))
 	for i, comm := range pieceComm {

@@ -212,7 +212,7 @@ func VerifyKZGRangeProof(
 			return fmt.Errorf("cell (%d,%d) has %d piece proofs, expected %d", cell.Row, cell.Column, len(cell.PieceOpenProofs), k)
 		}
 
-		pieceProofs := make([]cda.PieceCommitment, k)
+		pieceProofs := make([][]byte, k)
 		for i := 0; i < k; i++ {
 			pieceProofs[i] = cda.PieceCommitment(cell.PieceOpenProofs[i])
 		}

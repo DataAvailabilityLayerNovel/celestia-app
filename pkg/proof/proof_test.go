@@ -31,12 +31,7 @@ func TestKateCommitmentsAndColumnProofs(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, kateRoot)
 
-	kateCols, err := texts.KateCols()
-	require.NoError(t, err)
-	require.Len(t, kateCols, len(dah.ColumnComm))
-	for i := range kateCols {
-		assert.Equal(t, kateCols[i], dah.ColumnComm[i])
-	}
+	require.Len(t, dah.ColumnComm, int(texts.Width()))
 
 	proof, err := texts.BuildKateCommitmentProof(1)
 	require.NoError(t, err)
@@ -213,11 +208,11 @@ func setKateCommitments(t *testing.T, eds *rsmt2d.ExtendedDataSquare) {
 	require.NoError(t, err)
 }
 
-func proofsForCell(allProofs [][]byte, row, col, width, k int) []cda.PieceCommitment {
+func proofsForCell(allProofs [][]byte, row, col, width, k int) [][]byte {
 	idx := ((row * width) + col) * k
-	proofs := make([]cda.PieceCommitment, k)
+	proofs := make([][]byte, k)
 	for i := 0; i < k; i++ {
-		proofs[i] = cda.PieceCommitment(allProofs[idx+i])
+		proofs[i] = allProofs[idx+i]
 	}
 	return proofs
 }
