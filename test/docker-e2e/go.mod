@@ -48,7 +48,7 @@ require (
 	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d v0.0.0-20260415041718-41b98b80c63e // indirect
+	github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d v0.0.0-20260415104445-e6c04682ea37 // indirect
 	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0 // indirect
@@ -85,7 +85,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/celestiaorg/go-square/v2 v2.3.3 // indirect
-	github.com/celestiaorg/merkletree v0.0.0-20210714075610-a84dc3ddbbe4 // indirect
+	github.com/celestiaorg/merkletree v0.0.0-20230308153949-c33506a7aa26 // indirect
 	github.com/celestiaorg/nmt v0.24.2 // indirect
 	github.com/celestiaorg/rsmt2d v0.15.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -278,7 +278,7 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/term v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

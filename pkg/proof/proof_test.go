@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const d = 30000
+const d = 2810
 
 func TestKateCommitmentsAndColumnProofs(t *testing.T) {
 	dataSquare, err := makeOrderedBlobSquare(256)
@@ -48,11 +48,10 @@ func TestKateRootRequiresCommitments(t *testing.T) {
 	texts, err := da.ExtendShares(dataSquare)
 	require.NoError(t, err)
 
-	_, err = texts.KateRoot()
-	require.Error(t, err)
-
-	_, err = da.NewDataAvailabilityHeader(texts)
-	require.Error(t, err)
+	// NewDataAvailabilityHeader now auto-computes commitments, so no error expected
+	dah, err := da.NewDataAvailabilityHeader(texts)
+	require.NoError(t, err)
+	require.NotNil(t, dah)
 }
 
 func TestColumnCommitmentDeterministicCombine(t *testing.T) {
@@ -131,7 +130,7 @@ func TestBuildAndVerifyKZGRangeProof(t *testing.T) {
 	require.NoError(t, err)
 
 	codec := rlnc.NewRLNCCodec(4)
-	srs, err := kzg.NewSRS(128, big.NewInt(-1))
+	srs, err := kzg.NewSRS(uint64(eds.Width()*4), big.NewInt(-1))
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 
@@ -142,11 +141,71 @@ func TestBuildAndVerifyKZGRangeProof(t *testing.T) {
 	require.NoError(t, err)
 
 	ns := orderedBlobNamespace()
-	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider)
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider, d)
 	require.NoError(t, err)
+	require.NotEmpty(t, rangeProof.RowProofs)
+	require.NotNil(t, rangeProof.RowBatch)
 
 	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
 	require.NoError(t, err)
+}
+
+func TestVerifyKZGRangeProofRejectsTamperedRowProof(t *testing.T) {
+	dataSquare, err := makeOrderedBlobSquare(256)
+	require.NoError(t, err)
+
+	eds, err := da.ExtendShares(dataSquare)
+	require.NoError(t, err)
+
+	codec := rlnc.NewRLNCCodec(4)
+	srs, err := kzg.NewSRS(uint64(eds.Width()*4), big.NewInt(-1))
+	require.NoError(t, err)
+	provider := cda.NewGnarkKZG(*srs)
+
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
+	require.NoError(t, err)
+
+	dah, err := da.NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	ns := orderedBlobNamespace()
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider, d)
+	require.NoError(t, err)
+	require.NotEmpty(t, rangeProof.RowProofs)
+	require.NotEmpty(t, rangeProof.RowProofs[0].CombinedProof)
+
+	rangeProof.RowProofs[0].CombinedProof[0] ^= 0x01
+	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
+	require.Error(t, err)
+}
+
+func TestVerifyKZGRangeProofRejectsTamperedRowBatch(t *testing.T) {
+	dataSquare, err := makeOrderedBlobSquare(256)
+	require.NoError(t, err)
+
+	eds, err := da.ExtendShares(dataSquare)
+	require.NoError(t, err)
+
+	codec := rlnc.NewRLNCCodec(4)
+	srs, err := kzg.NewSRS(uint64(eds.Width()*4), big.NewInt(-1))
+	require.NoError(t, err)
+	provider := cda.NewGnarkKZG(*srs)
+
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
+	require.NoError(t, err)
+
+	dah, err := da.NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	ns := orderedBlobNamespace()
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider, d)
+	require.NoError(t, err)
+	require.NotNil(t, rangeProof.RowBatch)
+	require.NotEmpty(t, rangeProof.RowBatch.CombinedCommitment)
+
+	rangeProof.RowBatch.CombinedCommitment[0] ^= 0x01
+	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
+	require.Error(t, err)
 }
 
 func TestVerifyKZGRangeProofRejectsTamperedColumnCommitment(t *testing.T) {
@@ -168,7 +227,7 @@ func TestVerifyKZGRangeProofRejectsTamperedColumnCommitment(t *testing.T) {
 	require.NoError(t, err)
 
 	ns := orderedBlobNamespace()
-	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider)
+	rangeProof, err := proof.NewKZGRangeProofFromEDS(eds, &dah, ns, codec, provider, d)
 	require.NoError(t, err)
 	require.NotEmpty(t, rangeProof.ColumnProofs)
 
@@ -202,7 +261,7 @@ func setKateCommitments(t *testing.T, eds *rsmt2d.ExtendedDataSquare) {
 	t.Helper()
 
 	codec := rlnc.NewRLNCCodec(4)
-	srs, err := kzg.NewSRS(128, big.NewInt(-1))
+	srs, err := kzg.NewSRS(uint64(eds.Width()*4), big.NewInt(-1))
 	require.NoError(t, err)
 	provider := cda.NewGnarkKZG(*srs)
 

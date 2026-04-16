@@ -1,6 +1,7 @@
 package da
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/big"
@@ -36,8 +37,6 @@ var (
 // For details see the Celestia specification:
 // https://github.com/celestiaorg/celestia-specs/blob/master/src/specs/data_structures.md#availabledataheader
 type DataAvailabilityHeader struct {
-	// Use for gen deterministic coeffs when calculate KZG
-	d int
 	// PieceComm contains N*k Kate commitments for each piece of the EDS
 	// where N is the number of columns and k is the max chunks per column
 	PieceComm [][]byte `json:"piece_commitments"`
@@ -56,9 +55,13 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	if eds == nil {
 		return DataAvailabilityHeader{}, fmt.Errorf("eds is nil")
 	}
-	// NOTE: The current rlnc-rsmt2d API uses this value as the iteration bound
-	// for column commitment generation, so it must match the EDS width.
-	d := int(eds.Width())
+	// d, err := randomCoefficientSeed()
+	// if err != nil {
+	// 	return DataAvailabilityHeader{}, fmt.Errorf("failed to generate coefficient seed: %w", err)
+	// }
+
+	// Need a function to initial
+	d := 2810
 	codec := rlnc.NewRLNCCodec(4)
 	srsSize := uint64(eds.Width() * 4)
 	srs, err := bls12381kzg.NewSRS(srsSize, big.NewInt(-1))
@@ -90,7 +93,6 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	}
 
 	dah := DataAvailabilityHeader{
-		d:              d,
 		PieceComm:      pieceCommBytes,
 		ColumnComm:     columnCommBytes,
 		NamespaceIndex: namespaceIndex,
@@ -100,6 +102,21 @@ func NewDataAvailabilityHeader(eds *rsmt2d.ExtendedDataSquare) (DataAvailability
 	dah.Hash()
 
 	return dah, nil
+}
+
+func randomCoefficientSeed() (int, error) {
+	maxInt := new(big.Int).SetUint64(^uint64(0) >> 1)
+	seed, err := rand.Int(rand.Reader, maxInt)
+	if err != nil {
+		return 0, err
+	}
+
+	value := int(seed.Int64())
+	if value == 0 {
+		value = 1
+	}
+
+	return value, nil
 }
 
 // ConstructEDS constructs an ExtendedDataSquare from the given transactions and app version.

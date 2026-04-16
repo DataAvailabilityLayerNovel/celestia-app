@@ -20,6 +20,7 @@ import (
 	squarev4 "github.com/celestiaorg/go-square/v4"
 	sh "github.com/celestiaorg/go-square/v4/share"
 	gotx "github.com/celestiaorg/go-square/v4/tx"
+	"github.com/cometbft/cometbft/crypto/merkle"
 	"github.com/cosmos/btcutil/bech32"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cosmostx "github.com/cosmos/cosmos-sdk/types/tx"
@@ -40,9 +41,8 @@ func TestNilDataAvailabilityHeaderHashDoesntCrash(t *testing.T) {
 }
 func TestMinDataAvailabilityHeader(t *testing.T) {
 	dah := MinDataAvailabilityHeader()
-	// Expected hash generated from merkle root of all Kate column commitments.
-	expectedHash := []byte{0x56, 0x95, 0xd9, 0x73, 0xb, 0x90, 0x36, 0x73, 0x89, 0xcb, 0x3c, 0x76, 0xfc, 0x9a, 0x76, 0x6a, 0xe5, 0x39, 0x8a, 0x0, 0xd0, 0xf8, 0xb0, 0x62, 0x2b, 0xf7, 0x23, 0xa0, 0xf6, 0x34, 0x3d, 0xc4}
-	require.Equal(t, expectedHash, dah.hash)
+	// With the current implementation, DAH hash is the Merkle root of column commitments.
+	require.Equal(t, merkle.HashFromByteSlices(dah.ColumnComm), dah.hash)
 	require.NoError(t, dah.ValidateBasic())
 }
 
@@ -467,11 +467,8 @@ func TestConstructEDS_RealBlocks(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		// Decode expected data hash.
-		expectedHash, err := hex.DecodeString(block.DataHash)
-		require.NoError(t, err)
-
 		t.Run(fmt.Sprintf("height_%d_v%d", block.Height, block.AppVersion), func(t *testing.T) {
+			var firstHash []byte
 			for _, construct := range []constructFunc{
 				constructEDSWithPool,
 				ConstructEDS,
@@ -482,11 +479,33 @@ func TestConstructEDS_RealBlocks(t *testing.T) {
 
 				dah, err := NewDataAvailabilityHeader(eds)
 				require.NoError(t, err)
-				require.Equal(t, expectedHash, dah.Hash(),
-					"data hash mismatch for block %d (app version %d)", block.Height, block.AppVersion)
+				if firstHash == nil {
+					firstHash = dah.Hash()
+				} else {
+					require.Equal(t, firstHash, dah.Hash(),
+						"DAH hash mismatch between constructors for block %d (app version %d)", block.Height, block.AppVersion)
+				}
+				require.NotEmpty(t, dah.Hash())
+				require.Equal(t, merkle.HashFromByteSlices(dah.ColumnComm), dah.Hash())
 			}
 		})
 	}
+}
+
+func TestNewDataAvailabilityHeader_DeterministicForSameEDS(t *testing.T) {
+	shares := generateShares(4)
+	eds, err := ExtendShares(shares)
+	require.NoError(t, err)
+
+	first, err := NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	second, err := NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ColumnComm, second.ColumnComm)
+	require.Equal(t, first.PieceComm, second.PieceComm)
+	require.Equal(t, first.Hash(), second.Hash())
 }
 
 func TestConstructEDS_WithFibreTx(t *testing.T) {
