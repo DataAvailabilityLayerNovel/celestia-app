@@ -66,7 +66,7 @@ func (a *App) OutOfOrderPrepareProposal(req *abci.RequestPrepareProposal) (*abci
 	// erasure the data square which we use to create the data root. Note: this
 	// is using a modified version of nmt where the order of the namespaces is
 	// not enforced.
-	eds, err := ExtendShares(share.ToBytes(dataSquare))
+	eds, err := da.ExtendShares(share.ToBytes(dataSquare))
 	if err != nil {
 		a.Logger().Error(
 			"failure to erasure the data square while creating a proposal block",

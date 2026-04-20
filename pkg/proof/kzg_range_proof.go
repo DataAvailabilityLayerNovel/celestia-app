@@ -82,16 +82,58 @@ func NewKZGRangeProofFromEDS(
 	provider cda.KZGProvider,
 	seed int,
 ) (*KZGRangeProof, error) {
-	if eds == nil || dah == nil || codec == nil || provider == nil {
-		return nil, fmt.Errorf("nil input provided")
-	}
-
 	nsRange, ok := dah.NamespaceRange(namespace.Bytes())
 	if !ok {
 		return nil, fmt.Errorf("namespace %x not found in DAH namespace index", namespace.Bytes())
 	}
-	if nsRange.Start < 0 || nsRange.End <= nsRange.Start {
-		return nil, fmt.Errorf("invalid namespace range: [%d, %d)", nsRange.Start, nsRange.End)
+
+	return newKZGRangeProofFromEDSWithBounds(eds, dah, namespace, nsRange.Start, nsRange.End, codec, provider, seed)
+}
+
+// NewKZGRangeProofForRangeFromEDS builds a proof for a specific share range
+// inside a namespace.
+func NewKZGRangeProofForRangeFromEDS(
+	eds *rsmt2d.ExtendedDataSquare,
+	dah *da.DataAvailabilityHeader,
+	namespace share.Namespace,
+	shareRange share.Range,
+	codec *rlnc.RLNCCodec,
+	provider cda.KZGProvider,
+	seed int,
+) (*KZGRangeProof, error) {
+	nsRange, ok := dah.NamespaceRange(namespace.Bytes())
+	if !ok {
+		return nil, fmt.Errorf("namespace %x not found in DAH namespace index", namespace.Bytes())
+	}
+
+	if shareRange.Start < nsRange.Start || shareRange.End > nsRange.End {
+		return nil, fmt.Errorf(
+			"share range [%d,%d) is outside namespace range [%d,%d)",
+			shareRange.Start,
+			shareRange.End,
+			nsRange.Start,
+			nsRange.End,
+		)
+	}
+
+	return newKZGRangeProofFromEDSWithBounds(eds, dah, namespace, shareRange.Start, shareRange.End, codec, provider, seed)
+}
+
+func newKZGRangeProofFromEDSWithBounds(
+	eds *rsmt2d.ExtendedDataSquare,
+	dah *da.DataAvailabilityHeader,
+	namespace share.Namespace,
+	rangeStart int,
+	rangeEnd int,
+	codec *rlnc.RLNCCodec,
+	provider cda.KZGProvider,
+	seed int,
+) (*KZGRangeProof, error) {
+	if eds == nil || dah == nil || codec == nil || provider == nil {
+		return nil, fmt.Errorf("nil input provided")
+	}
+	if rangeStart < 0 || rangeEnd <= rangeStart {
+		return nil, fmt.Errorf("invalid namespace range: [%d, %d)", rangeStart, rangeEnd)
 	}
 
 	squareSize, err := square.Size(len(eds.FlattenedODS()))
@@ -108,8 +150,8 @@ func NewKZGRangeProofFromEDS(
 	_, allProofs := merkle.ProofsFromByteSlices(dah.ColumnComm)
 
 	affectedCols := make(map[int]struct{})
-	cellIndices := make([]int, 0, nsRange.End-nsRange.Start)
-	for idx := nsRange.Start; idx < nsRange.End; idx++ {
+	cellIndices := make([]int, 0, rangeEnd-rangeStart)
+	for idx := rangeStart; idx < rangeEnd; idx++ {
 		row := idx / squareSize
 		col := idx % squareSize
 		if row < 0 || row >= squareSize || col < 0 || col >= squareSize {
@@ -188,8 +230,8 @@ func NewKZGRangeProofFromEDS(
 	return &KZGRangeProof{
 		NamespaceID:      append([]byte(nil), namespace.ID()...),
 		NamespaceVersion: uint32(namespace.Version()),
-		StartCell:        uint32(nsRange.Start),
-		EndCell:          uint32(nsRange.End),
+		StartCell:        uint32(rangeStart),
+		EndCell:          uint32(rangeEnd),
 		DataRoot:         append([]byte(nil), dah.Hash()...),
 		Width:            uint32(width),
 		MaxChunks:        uint32(k),

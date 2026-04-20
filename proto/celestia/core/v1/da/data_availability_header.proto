@@ -15,7 +15,23 @@ option go_package = "github.com/celestiaorg/celestia-app/proto/celestia/core/v1/
 // (different from the spec).
 message DataAvailabilityHeader {
   // RowRoot_j = root((M_{j,1} || M_{j,2} || ... || M_{j,2k} ))
-  repeated bytes row_roots = 1;
+  repeated bytes row_roots = 1 [deprecated = true];
   // ColumnRoot_j = root((M_{1,j} || M_{2,j} || ... || M_{2k,j} ))
-  repeated bytes column_roots = 2;
+  repeated bytes column_roots = 2 [deprecated = true];
+
+  // piece_commitments contains N*k Kate commitments for each piece of the EDS.
+  repeated bytes piece_commitments = 3;
+
+  // column_commitments contains N Kate commitments, one for each combined column.
+  repeated bytes column_commitments = 4;
+
+  // namespace_index stores end-exclusive ranges for namespaces in the ODS.
+  repeated NamespaceRangeEntry namespace_index = 5;
+}
+
+// NamespaceRangeEntry maps one namespace id to its [start, end) share range.
+message NamespaceRangeEntry {
+  bytes namespace_id = 1;
+  uint32 start = 2;
+  uint32 end = 3;
 }

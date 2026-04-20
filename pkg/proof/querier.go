@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/celestiaorg/celestia-app/v8/pkg/appconsts"
-	"github.com/celestiaorg/go-square/v4"
+	"github.com/celestiaorg/celestia-app/v8/pkg/da"
 	"github.com/celestiaorg/go-square/v4/share"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
@@ -89,10 +89,12 @@ func QueryShareInclusionProof(_ sdk.Context, path []string, req *abci.RequestQue
 		return nil, fmt.Errorf("error reading block: %w", err)
 	}
 
-	// construct the data square from the block data. As we don't have
-	// access to the application's state machine we use the upper bound
-	// square size instead of the square size dictated from governance
-	dataSquare, err := square.Construct(pbb.Data.Txs, appconsts.SquareSizeUpperBound, appconsts.SubtreeRootThreshold)
+	eds, err := da.ConstructEDS(pbb.Data.Txs, pbb.Header.Version.App, appconsts.SquareSizeUpperBound)
+	if err != nil {
+		return nil, err
+	}
+
+	rawShares, err := share.FromBytes(eds.FlattenedODS())
 	if err != nil {
 		return nil, err
 	}
@@ -106,14 +108,14 @@ func QueryShareInclusionProof(_ sdk.Context, path []string, req *abci.RequestQue
 		return nil, err
 	}
 
-	nID, err := ParseNamespace(dataSquare, begin, end)
+	nID, err := ParseNamespace(rawShares, begin, end)
 	if err != nil {
 		return nil, err
 	}
 
 	shareRange := share.NewRange(begin, end)
 	// create and marshal the share inclusion proof, which we return in the form of []byte
-	shareProof, err := NewShareInclusionProof(dataSquare, nID, shareRange)
+	shareProof, err := NewShareInclusionProofFromEDS(eds, nID, shareRange)
 	if err != nil {
 		return nil, err
 	}

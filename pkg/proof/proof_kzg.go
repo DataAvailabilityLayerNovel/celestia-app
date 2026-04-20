@@ -7,43 +7,6 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
 
-// KZGMultiProof represents a KZG polynomial commitment proof for a range of shares
-// in a column. It proves that specific shares belong to the polynomial represented
-// by a column commitment via the KZG polynomial commitment scheme.
-//
-// The proof consists of a single G1 point (the quotient polynomial commitment),
-// which when used with pairing verification can confirm that the shares satisfy
-// the column polynomial commitment.
-type KZGMultiProof struct {
-	// Proof is the G1 point representing the commited quotient polynomial Q(x).
-	// This is the result of committing to the quotient Q(x) = [L(x) - I_S(x)] / Z_S(x)
-	// Where L(x) is the interpolation polynomial of the shares and Z_S(x) is the
-	// vanishing polynomial for the namespace range.
-	// Serialized in compressed form (48 bytes for BN254).
-	Proof *bn254.G1Affine `json:"proof"`
-}
-
-// CommitmentProof proves that column commitments belong to the data root.
-// This replaces the old RowProof's role in proving row/column inclusion to the root.
-//
-// The proof demonstrates that specific column commitments from the data square
-// commit to shares that are correctly included in the data root commitment.
-type CommitmentProof struct {
-	// ColumnProofs contains KZG proofs for each column commitment.
-	// These prove that each column commitment satisfies the polynomial relationship
-	// with the namespace range being queried.
-	ColumnProofs []*KZGMultiProof
-
-	// ColumnIndices contains the indices of columns being proven.
-	// Used to identify which columns in the EDS are included in this proof.
-	ColumnIndices []uint32
-
-	// RootCommitment is the data root as a point commitment.
-	// Optional, for verification purposes. Represents the root of the
-	// commitment tree over all column commitments.
-	RootCommitment *bn254.G1Affine
-}
-
 // PolynomialInterpolation represents a polynomial interpolated from shares.
 // Used internally for KZG proof generation.
 type PolynomialInterpolation struct {
@@ -174,17 +137,24 @@ func (e ErrPairingVerificationFailed) Error() string {
 
 // NewKZGMultiProof creates a new KZG proof with the given quotient polynomial commitment.
 func NewKZGMultiProof(proofPoint *bn254.G1Affine) *KZGMultiProof {
+	if proofPoint == nil {
+		return &KZGMultiProof{}
+	}
 	return &KZGMultiProof{
-		Proof: proofPoint,
+		Proof: proofPoint.Marshal(),
 	}
 }
 
 // NewCommitmentProof creates a new commitment proof.
 func NewCommitmentProof(columnProofs []*KZGMultiProof, columnIndices []uint32, rootCommitment *bn254.G1Affine) *CommitmentProof {
+	var root []byte
+	if rootCommitment != nil {
+		root = rootCommitment.Marshal()
+	}
 	return &CommitmentProof{
 		ColumnProofs:   columnProofs,
 		ColumnIndices:  columnIndices,
-		RootCommitment: rootCommitment,
+		RootCommitment: root,
 	}
 }
 

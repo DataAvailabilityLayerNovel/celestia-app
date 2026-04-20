@@ -99,7 +99,7 @@ func TestMaliciousTestNode(t *testing.T) {
 	require.NoError(t, err)
 
 	rawSquare := share.ToBytes(s)
-	eds, err := ExtendShares(rawSquare)
+	eds, err := da.ExtendShares(rawSquare)
 	require.NoError(t, err)
 
 	dah, err := da.NewDataAvailabilityHeader(eds)

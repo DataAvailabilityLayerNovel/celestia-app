@@ -150,6 +150,54 @@ func TestBuildAndVerifyKZGRangeProof(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBuildAndVerifyKZGRangeProofForSubRange(t *testing.T) {
+	dataSquare, err := makeOrderedBlobSquare(256)
+	require.NoError(t, err)
+
+	eds, err := da.ExtendShares(dataSquare)
+	require.NoError(t, err)
+
+	codec := rlnc.NewRLNCCodec(4)
+	srs, err := kzg.NewSRS(uint64(eds.Width()*4), big.NewInt(-1))
+	require.NoError(t, err)
+	provider := cda.NewGnarkKZG(*srs)
+
+	_, err = cda.ComputeAndSetKateCommitments(codec, eds, provider, d)
+	require.NoError(t, err)
+
+	dah, err := da.NewDataAvailabilityHeader(eds)
+	require.NoError(t, err)
+
+	ns := orderedBlobNamespace()
+	nsRange, ok := dah.NamespaceRange(ns.Bytes())
+	require.True(t, ok)
+	require.Greater(t, nsRange.End-nsRange.Start, 1)
+
+	subRange := share.NewRange(nsRange.Start+1, nsRange.End)
+	rangeProof, err := proof.NewKZGRangeProofForRangeFromEDS(eds, &dah, ns, subRange, codec, provider, d)
+	require.NoError(t, err)
+	require.Equal(t, uint32(subRange.Start), rangeProof.StartCell)
+	require.Equal(t, uint32(subRange.End), rangeProof.EndCell)
+
+	err = proof.VerifyKZGRangeProof(rangeProof, &dah, codec, provider)
+	require.NoError(t, err)
+}
+
+func TestNewTxInclusionProofUsesKZGShape(t *testing.T) {
+	txs := [][]byte{
+		[]byte("tx-0"),
+		[]byte("tx-1"),
+		[]byte("tx-2"),
+	}
+
+	sp, err := proof.NewTxInclusionProof(txs, 1, 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, sp.Data)
+	require.NotEmpty(t, sp.ShareProofs)
+	require.NotNil(t, sp.CommitmentProof)
+	require.NotEmpty(t, sp.CommitmentProof.ColumnProofs)
+}
+
 func TestVerifyKZGRangeProofRejectsTamperedRowProof(t *testing.T) {
 	dataSquare, err := makeOrderedBlobSquare(256)
 	require.NoError(t, err)

@@ -2,42 +2,30 @@ package proof
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/cometbft/cometbft/crypto/merkle"
 )
 
-// Validate performs checks on the fields of this RowProof. Returns an error if
-// the proof fails validation. If the proof passes validation, this function
-// attempts to verify the proof. It returns nil if the proof is valid.
-func (rp RowProof) Validate(root []byte) error {
-	// HACKHACK performing subtraction with unsigned integers is unsafe.
-	if int(rp.EndRow-rp.StartRow+1) != len(rp.RowRoots) {
-		return fmt.Errorf("the number of rows %d must equal the number of row roots %d", int(rp.EndRow-rp.StartRow+1), len(rp.RowRoots))
-	}
-	if len(rp.Proofs) != len(rp.RowRoots) {
-		return fmt.Errorf("the number of proofs %d must equal the number of row roots %d", len(rp.Proofs), len(rp.RowRoots))
-	}
-	if !rp.VerifyProof(root) {
-		return errors.New("row proof failed to verify")
-	}
-
-	return nil
+// Proof is an internal Merkle inclusion proof used by KZG range proof wiring.
+type Proof struct {
+	Total    int64
+	Index    int64
+	LeafHash []byte
+	Aunts    [][]byte
 }
 
-// VerifyProof verifies that all the row roots in this RowProof exist in a
-// Merkle tree with the given root. Returns true if all proofs are valid.
-func (rp RowProof) VerifyProof(root []byte) bool {
-	for i, proof := range rp.Proofs {
-		err := proof.Verify(root, rp.RowRoots[i])
-		if err != nil {
-			return false
-		}
-	}
-	return true
+// NMTProof is kept as an internal type for legacy helper compatibility.
+type NMTProof struct {
+	Start    int32
+	End      int32
+	Nodes    [][]byte
+	LeafHash []byte
 }
 
 func (p *Proof) Verify(rootHash, leaf []byte) error {
+	if p == nil {
+		return errors.New("nil merkle proof")
+	}
 	proof := &merkle.Proof{
 		Total:    p.Total,
 		Index:    p.Index,

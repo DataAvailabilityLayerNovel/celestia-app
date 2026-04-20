@@ -5,16 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 
+	rsmt2d "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d"
+	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/cda"
+	"github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d/rlnc"
 	"github.com/celestiaorg/celestia-app/v8/pkg/appconsts"
 	"github.com/celestiaorg/celestia-app/v8/pkg/da"
 	"github.com/celestiaorg/celestia-app/v8/pkg/wrapper"
 	"github.com/celestiaorg/go-square/v4"
 	"github.com/celestiaorg/go-square/v4/share"
 	blobtx "github.com/celestiaorg/go-square/v4/tx"
-	rsmt2d "github.com/DataAvailabilityLayerNovel/rlnc-rsmt2d"
-	"github.com/cometbft/cometbft/crypto/merkle"
+	bls12381kzg "github.com/consensys/gnark-crypto/ecc/bls12-381/kzg"
 )
+
+const defaultKZGProofSeed = 2810
 
 // NewTxInclusionProof returns a new share inclusion proof for the given
 // transaction index.
@@ -46,14 +51,6 @@ func NewTxInclusionProof(txs [][]byte, txIndex, _ uint64) (ShareProof, error) {
 	return NewShareInclusionProof(dataSquare, namespace, shareRange)
 }
 
-func getTxNamespace(tx []byte) (ns share.Namespace) {
-	_, isBlobTx, _ := blobtx.UnmarshalBlobTx(tx)
-	if isBlobTx {
-		return share.PayForBlobNamespace
-	}
-	return share.TxNamespace
-}
-
 // NewShareInclusionProof takes an ODS, extends it, then
 // returns an NMT inclusion proof for a set of shares
 // belonging to the same namespace to the data root.
@@ -63,10 +60,12 @@ func NewShareInclusionProof(
 	namespace share.Namespace,
 	shareRange share.Range,
 ) (ShareProof, error) {
-	eds, err := da.ExtendShares(share.ToBytes(dataSquare))
+	ods := share.ToBytes(dataSquare)
+	eds, err := da.ExtendShares(ods)
 	if err != nil {
 		return ShareProof{}, err
 	}
+
 	return NewShareInclusionProofFromEDS(eds, namespace, shareRange)
 }
 
@@ -79,65 +78,46 @@ func NewShareInclusionProofFromEDS(
 	namespace share.Namespace,
 	shareRange share.Range,
 ) (ShareProof, error) {
+	if eds == nil {
+		return ShareProof{}, fmt.Errorf("eds cannot be nil")
+	}
+	if shareRange.End <= shareRange.Start {
+		return ShareProof{}, fmt.Errorf("invalid share range [%d,%d)", shareRange.Start, shareRange.End)
+	}
+
 	squareSize, err := square.Size(len(eds.FlattenedODS()))
 	if err != nil {
 		return ShareProof{}, err
 	}
-	startRow := shareRange.Start / squareSize
-	endRow := (shareRange.End - 1) / squareSize
-	startLeaf := shareRange.Start % squareSize
-	endLeaf := (shareRange.End - 1) % squareSize
+	maxShares := squareSize * squareSize
+	if shareRange.Start < 0 || shareRange.End > maxShares {
+		return ShareProof{}, fmt.Errorf("share range [%d,%d) out of ODS bounds [0,%d)", shareRange.Start, shareRange.End, maxShares)
+	}
 
-	edsRowRoots, err := eds.RowRoots()
+	dah, err := da.NewDataAvailabilityHeader(eds)
 	if err != nil {
 		return ShareProof{}, err
 	}
 
-	edsColRoots, err := eds.ColRoots()
+	codec, provider, err := buildKZGProofContext(eds)
 	if err != nil {
 		return ShareProof{}, err
 	}
 
-	// create the binary merkle inclusion proof for all the square rows to the data root
-	_, allProofs := merkle.ProofsFromByteSlices(append(edsRowRoots, edsColRoots...))
-	rowProofs := make([]*Proof, endRow-startRow+1)
-	rowRoots := make([][]byte, endRow-startRow+1)
-	for i := startRow; i <= endRow; i++ {
-		rowProofs[i-startRow] = &Proof{
-			Total:    allProofs[i].Total,
-			Index:    allProofs[i].Index,
-			LeafHash: allProofs[i].LeafHash,
-			Aunts:    allProofs[i].Aunts,
-		}
-		rowRoots[i-startRow] = edsRowRoots[i]
-	}
-
-	// get the extended rows containing the shares.
-	rows := make([][]share.Share, endRow-startRow+1)
-	for i := startRow; i <= endRow; i++ {
-		shares, err := share.FromBytes(eds.Row(uint(i)))
-		if err != nil {
-			return ShareProof{}, err
-		}
-		rows[i-startRow] = shares
-	}
-
-	shareProofs, rawShares, err := CreateShareToRowRootProofs(squareSize, rows, rowRoots, startLeaf, endLeaf)
+	rangeProof, err := NewKZGRangeProofForRangeFromEDS(eds, &dah, namespace, shareRange, codec, provider, defaultKZGProofSeed)
 	if err != nil {
 		return ShareProof{}, err
 	}
-	return ShareProof{
-		RowProof: &RowProof{
-			RowRoots: rowRoots,
-			Proofs:   rowProofs,
-			StartRow: uint32(startRow),
-			EndRow:   uint32(endRow),
-		},
-		Data:             rawShares,
-		ShareProofs:      shareProofs,
-		NamespaceId:      namespace.ID(),
-		NamespaceVersion: uint32(namespace.Version()),
-	}, nil
+
+	return shareProofFromKZGRange(rangeProof, dah.Hash())
+}
+
+func getTxNamespace(tx []byte) (ns share.Namespace) {
+	_, isBlobTx, _ := blobtx.UnmarshalBlobTx(tx)
+	if isBlobTx {
+		return share.PayForBlobNamespace
+	}
+	return share.TxNamespace
 }
 
 func safeConvertUint64ToInt(val uint64) (int, error) {
@@ -145,6 +125,52 @@ func safeConvertUint64ToInt(val uint64) (int, error) {
 		return 0, fmt.Errorf("value %d is too large to convert to int", val)
 	}
 	return int(val), nil
+}
+
+func buildKZGProofContext(eds *rsmt2d.ExtendedDataSquare) (*rlnc.RLNCCodec, cda.KZGProvider, error) {
+	codec := rlnc.NewRLNCCodec(4)
+	srsSize := uint64(eds.Width() * 4)
+	srs, err := bls12381kzg.NewSRS(srsSize, big.NewInt(-1))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create KZG SRS: %w", err)
+	}
+	provider := cda.NewGnarkKZG(*srs)
+	return codec, provider, nil
+}
+
+func shareProofFromKZGRange(rangeProof *KZGRangeProof, root []byte) (ShareProof, error) {
+	if rangeProof == nil {
+		return ShareProof{}, fmt.Errorf("kzg range proof cannot be nil")
+	}
+
+	data := make([][]byte, 0, len(rangeProof.CellProofs))
+	shareProofs := make([]*KZGMultiProof, 0, len(rangeProof.CellProofs))
+	for _, cell := range rangeProof.CellProofs {
+		if len(cell.PieceOpenProofs) == 0 {
+			return ShareProof{}, fmt.Errorf("cell (%d,%d) has no piece opening proof", cell.Row, cell.Column)
+		}
+		data = append(data, append([]byte(nil), cell.ShareData...))
+		shareProofs = append(shareProofs, &KZGMultiProof{Proof: append([]byte(nil), cell.PieceOpenProofs[0]...)})
+	}
+
+	columnProofs := make([]*KZGMultiProof, 0, len(rangeProof.ColumnProofs))
+	columnIndices := make([]uint32, 0, len(rangeProof.ColumnProofs))
+	for _, colProof := range rangeProof.ColumnProofs {
+		columnProofs = append(columnProofs, &KZGMultiProof{Proof: append([]byte(nil), colProof.Commitment...)})
+		columnIndices = append(columnIndices, colProof.Column)
+	}
+
+	return ShareProof{
+		Data:             data,
+		ShareProofs:      shareProofs,
+		NamespaceId:      append([]byte(nil), rangeProof.NamespaceID...),
+		NamespaceVersion: rangeProof.NamespaceVersion,
+		CommitmentProof: &CommitmentProof{
+			ColumnProofs:   columnProofs,
+			ColumnIndices:  columnIndices,
+			RootCommitment: append([]byte(nil), root...),
+		},
+	}, nil
 }
 
 // CreateShareToRowRootProofs takes a set of shares and their corresponding row roots, and generates
@@ -200,4 +226,8 @@ func CreateShareToRowRootProofs(squareSize int, rowShares [][]share.Share, rowRo
 		})
 	}
 	return shareProofs, rawShares, nil
+}
+
+func errorsNewLegacyUnsupported() error {
+	return fmt.Errorf("legacy NMT share inclusion proof is removed; use KZG range proof APIs")
 }
