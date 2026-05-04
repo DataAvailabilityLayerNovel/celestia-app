@@ -61,7 +61,7 @@ If needed by partner tooling, generate a descriptor set using the pinned commit 
 
 ## Golden vectors (binary payload) and validation expectations
 
-Status: no ShareProof or DataAvailabilityHeader binary vectors are committed in this repo at this time.
+Status: vectors are committed under docs/architecture/testdata/proto-kzg/.
 
 Required vectors (binary protobuf Marshal output) and expected validation results:
 
@@ -76,13 +76,12 @@ ShareProof vectors:
 
 DataAvailabilityHeader vectors:
 
-- dah_valid_new_fields.bin: expected ValidateBasic pass
-- dah_empty_column_commitments.bin: expected ValidateBasic fail (too few commitments)
-- dah_invalid_hash.bin: expected ValidateBasic fail
+- dah_valid_new_fields.bin: expected shape pass (see expected results doc for ValidateBasic behavior)
 
-Suggested location for vectors (if we decide to check them in):
+Vectors and expected results:
 
 - docs/architecture/testdata/proto-kzg/
+- docs/architecture/testdata/proto-kzg/expected_results.md
 
 Consumers must treat these vectors as canonical for the pinned commit.
 

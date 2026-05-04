@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
+	corev1proof "github.com/celestiaorg/celestia-app/v8/pkg/proof"
 	corev1da "github.com/celestiaorg/celestia-app/v8/proto/celestia/core/v1/da"
-	corev1proof "github.com/celestiaorg/celestia-app/v8/proto/celestia/core/v1/proof"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -15,7 +15,7 @@ func main() {
 
 	// 1. ShareProof valid
 	spValid := &corev1proof.ShareProof{
-		Data:        [][]byte{{"data1"}},
+		Data:        [][]byte{[]byte("data1")},
 		ShareProofs: []*corev1proof.KZGMultiProof{{Proof: []byte("proof1")}},
 		NamespaceId: []byte("ns1"),
 		CommitmentProof: &corev1proof.CommitmentProof{
@@ -28,7 +28,7 @@ func main() {
 
 	// 2. ShareProof empty proofs
 	spEmptyProofs := &corev1proof.ShareProof{
-		Data:        [][]byte{{"data1"}},
+		Data:        [][]byte{[]byte("data1")},
 		ShareProofs: []*corev1proof.KZGMultiProof{}, // empty
 		NamespaceId: []byte("ns1"),
 		CommitmentProof: &corev1proof.CommitmentProof{
@@ -40,7 +40,7 @@ func main() {
 	save(filepath.Join(outDir, "share_proof_empty_share_proofs.bin"), spEmptyProofs)
 
 	spEmptyKZGProof := &corev1proof.ShareProof{
-		Data:        [][]byte{{"data1"}},
+		Data:        [][]byte{[]byte("data1")},
 		ShareProofs: []*corev1proof.KZGMultiProof{{Proof: []byte{}}}, // empty inside
 		NamespaceId: []byte("ns1"),
 		CommitmentProof: &corev1proof.CommitmentProof{
@@ -53,7 +53,7 @@ func main() {
 
 	// 3. ShareProof mismatched column proofs/indices
 	spMismatchCol := &corev1proof.ShareProof{
-		Data:        [][]byte{{"data1"}},
+		Data:        [][]byte{[]byte("data1")},
 		ShareProofs: []*corev1proof.KZGMultiProof{{Proof: []byte("proof1")}},
 		NamespaceId: []byte("ns1"),
 		CommitmentProof: &corev1proof.CommitmentProof{
@@ -66,7 +66,7 @@ func main() {
 
 	// 4. ShareProof root mismatch
 	spRootMismatch := &corev1proof.ShareProof{
-		Data:        [][]byte{{"data1"}},
+		Data:        [][]byte{[]byte("data1")},
 		ShareProofs: []*corev1proof.KZGMultiProof{{Proof: []byte("proof1")}},
 		NamespaceId: []byte("ns1"),
 		CommitmentProof: &corev1proof.CommitmentProof{
